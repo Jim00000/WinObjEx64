@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        17 May 2021
+*  DATE:        28 May 2021
 *
 *  Common header file for the program support routines.
 *
@@ -272,9 +272,13 @@ VOID supUpdateLoadBannerText(
     _In_ LPCWSTR lpText,
     _In_ BOOL UseList);
 
+VOID supCloseLoadBanner(
+    _In_ HWND hwndBanner);
+
 HWND supDisplayLoadBanner(
     _In_opt_ HWND hwndParent,
-    _In_ LPWSTR lpMessage,
+    _In_ LPCWSTR lpMessage,
+    _In_opt_ LPCWSTR lpCaption,
     _In_ BOOL UseList);
 
 HIMAGELIST supLoadImageList(

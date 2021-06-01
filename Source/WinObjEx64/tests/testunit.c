@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        11 May 2021
+*  DATE:        29 May 2021
 *
 *  Test code used while debug.
 *
@@ -622,7 +622,7 @@ VOID TestApiSetResolve()
 
     NtLdrApiSetLoadFromPeb(&Version, &Data);
 
-    LPWSTR ToResolve[12] = {
+    LPWSTR ToResolve[] = {
         L"hui-ms-win-core-app-l1-2-3.dll",
         L"api-ms-win-nevedomaya-ebanaya-hyinua-l1-1-3.dll",
         L"api-ms-win-core-appinit-l1-1-0.dll",
@@ -634,11 +634,12 @@ VOID TestApiSetResolve()
         L"api-ms-win-core-psapi-l1-1-0.dll",
         L"api-ms-win-core-enclave-l1-1-1.dll",
         L"api-ms-onecoreuap-print-render-l1-1-0.dll",
-        L"api-ms-win-deprecated-apis-advapi-l1-1-0.dll"
+        L"api-ms-win-deprecated-apis-advapi-l1-1-0.dll",
+        L"api-ms-win-core-com-l2-1-1"
     };
 
 
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i < RTL_NUMBER_OF(ToResolve); i++) {
         RtlInitUnicodeString(&ApiSetLibrary, ToResolve[i]);
 
         Status = NtLdrApiSetResolveLibrary(Data,
@@ -649,15 +650,15 @@ VOID TestApiSetResolve()
 
         if (NT_SUCCESS(Status)) {
             if (Resolved) {
-                kdDebugPrint("%wZ\r\n", ResolvedHostLibrary);
+                kdDebugPrint("APISET>> %wZ\r\n", &ResolvedHostLibrary);
                 RtlFreeUnicodeString(&ResolvedHostLibrary);
             }
             else {
-                kdDebugPrint("Could not resolve apiset %wZ\r\n", ApiSetLibrary);
+                kdDebugPrint("APISET>> Could not resolve apiset %wZ\r\n", &ApiSetLibrary);
             }
         }
         else {
-            kdDebugPrint("NtLdrApiSetResolveLibrary failed 0x%lx\r\n", Status);
+            kdDebugPrint("APISET>> NtLdrApiSetResolveLibrary failed 0x%lx for %wZ\r\n", Status, &ApiSetLibrary);
         }
     }
 
@@ -672,11 +673,11 @@ VOID TestApiSetResolve()
 
     if (NT_SUCCESS(Status)) {
         if (Resolved) {
-            kdDebugPrint("Resolved apiset %wZ\r\n", ResolvedHostLibrary);
+            kdDebugPrint("APISET>> Resolved apiset %wZ\r\n", &ResolvedHostLibrary);
             RtlFreeUnicodeString(&ResolvedHostLibrary);
         }
         else {
-            kdDebugPrint("Could not resolve apiset %wZ\r\n", ApiSetLibrary);
+            kdDebugPrint("APISET>> Could not resolve apiset %wZ\r\n", &ApiSetLibrary);
         }
     }
     else {
@@ -971,128 +972,118 @@ VOID TestSymbols()
     SYM_CHILD* pSymChild;
 
     WCHAR* pStrEnd;
-    WCHAR* pOutput = (WCHAR*)supHeapAlloc(4 * MAX_SYM_NAME);
+    WCHAR* pOutput; 
 
-    if (pOutput == NULL)
+    if (!kdIsSymAvailable(&g_kdctx))
         return;
 
+    pOutput = (WCHAR*)supHeapAlloc(4 * MAX_SYM_NAME);
+    if (pOutput == NULL)
+        return;
 
     Context = (PSYMCONTEXT)g_kdctx.NtOsSymContext;
     if (Context) {
 
         SymParser = &Context->Parser;
 
-        bStatus = (Context->ModuleBase != 0);
+        //
+        // Test parser 
+        // N.B. This is not fully functional dumper with fancy decorations.
+        //
 
-        if (!bStatus) {
-            bStatus = SymParser->LoadModule(
-                Context,
-                L"C:\\windows\\system32\\ntoskrnl.exe",
-                0,
-                0);
-        }
+        for (i = 0; i < RTL_NUMBER_OF(testSymbols); i++) {
+            pSymEntry = SymParser->DumpSymbolInformation(Context,
+                testSymbols[i],
+                &bStatus);
 
-        if (bStatus) {
+            if (pSymEntry == NULL) {
+                _strcpy(pOutput, L"\r\n->");
+                _strcat(pOutput, testSymbols[i]);
+                _strcat(pOutput, L"<- failed to dump\r\n");
+                OutputDebugStringW(pOutput);
 
-            //
-            // Test parser 
-            // N.B. This is not fully functional dumper with fancy decorations.
-            //
+            }
+            else {
 
-            for (i = 0; i < RTL_NUMBER_OF(testSymbols); i++) {
-                pSymEntry = SymParser->DumpSymbolInformation(Context,
-                    testSymbols[i],
-                    &bStatus);
+                _strcpy(pOutput, TEXT("\r\n"));
+                _strcat(pOutput, pSymEntry->Name);
+                _strcat(pOutput, TEXT("\r\n"));
 
-                if (pSymEntry == NULL) {
-                    _strcpy(pOutput, L"\r\n->");
-                    _strcat(pOutput, testSymbols[i]);
-                    _strcat(pOutput, L"<- failed to dump\r\n");
-                    OutputDebugStringW(pOutput);
+                OutputDebugStringW(pOutput);
 
-                } else {
+                for (j = 0; j < pSymEntry->ChildCount; j++) {
 
-                    _strcpy(pOutput, TEXT("\r\n"));
-                    _strcat(pOutput, pSymEntry->Name);
-                    _strcat(pOutput, TEXT("\r\n"));
+                    pOutput[0] = 0;
 
-                    OutputDebugStringW(pOutput);
+                    pSymChild = &pSymEntry->ChildEntries[j];
 
-                    for (j = 0; j < pSymEntry->ChildCount; j++) {
+                    RtlStringCchPrintfSecure(&pOutput[0],
+                        (MAX_SYM_NAME + 32) * 2,
+                        TEXT("/* 0x%04lx: */\t%ws %ws"),
+                        pSymChild->Offset,
+                        pSymChild->TypeName,
+                        pSymChild->Name);
 
-                        pOutput[0] = 0;
+                    pStrEnd = _strend(pOutput);
 
-                        pSymChild = &pSymEntry->ChildEntries[j];
+                    if (pSymChild->ElementsCount > 1) {
 
-                        RtlStringCchPrintfSecure(&pOutput[0],
-                            (MAX_SYM_NAME + 32) * 2,
-                            TEXT("/* 0x%04lx: */\t%ws %ws"),
-                            pSymChild->Offset,
-                            pSymChild->TypeName,
-                            pSymChild->Name);
+                        RtlStringCchPrintfSecure(pStrEnd,
+                            32,
+                            TEXT("[%llu]"),
+                            pSymChild->ElementsCount);
 
                         pStrEnd = _strend(pOutput);
 
-                        if (pSymChild->ElementsCount > 1) {
-
-                            RtlStringCchPrintfSecure(pStrEnd,
-                                32,
-                                TEXT("[%llu]"),
-                                pSymChild->ElementsCount);
-
-                            pStrEnd = _strend(pOutput);
-
-                        }
-
-                        if (pSymChild->IsValuePresent) {
-
-                            RtlStringCchPrintfSecure(pStrEnd,
-                                32,
-                                TEXT(" = %llu"),
-                                pSymChild->Value);
-                            pStrEnd = _strend(pOutput);
-                        }
-
-                        _strcat(pStrEnd, TEXT(";"));
-
-                        if (pSymChild->IsBitField) {
-
-                            pStrEnd = _strcat(pStrEnd, TEXT(" /* bit position: "));
-                            ultostr(pSymChild->BitPosition, pStrEnd);
-                            _strcat(pStrEnd, TEXT(" */"));
-                            pStrEnd = _strend(pStrEnd);
-                        }
-
-                        _strcat(pStrEnd, TEXT("\r\n"));
-
-                        OutputDebugStringW(pOutput);
-
                     }
 
-                    supHeapFree(pSymEntry);
+                    if (pSymChild->IsValuePresent) {
+
+                        RtlStringCchPrintfSecure(pStrEnd,
+                            32,
+                            TEXT(" = %llu"),
+                            pSymChild->Value);
+                        pStrEnd = _strend(pOutput);
+                    }
+
+                    _strcat(pStrEnd, TEXT(";"));
+
+                    if (pSymChild->IsBitField) {
+
+                        pStrEnd = _strcat(pStrEnd, TEXT(" /* bit position: "));
+                        ultostr(pSymChild->BitPosition, pStrEnd);
+                        _strcat(pStrEnd, TEXT(" */"));
+                        pStrEnd = _strend(pStrEnd);
+                    }
+
+                    _strcat(pStrEnd, TEXT("\r\n"));
+
+                    OutputDebugStringW(pOutput);
+
                 }
+
+                supHeapFree(pSymEntry);
             }
+        }
 
-            dummy = SymParser->GetFieldOffset(Context,
-                L"_EPROCESS",
-                L"UniqueProcessId",
-                &bStatus);
+        dummy = SymParser->GetFieldOffset(Context,
+            L"_EPROCESS",
+            L"UniqueProcessId",
+            &bStatus);
 
-            if (bStatus) {
+        if (bStatus) {
 
-                DbgPrint("sym offset %lx\r\n", dummy);
+            DbgPrint("sym offset %lx\r\n", dummy);
 
-            }
+        }
 
-            var = 0;
-            if (kdGetAddressFromSymbol(
-                &g_kdctx,
-                TEXT("ObHeaderCookie"),
-                &var))
-            {
-                DbgPrint("ObHeaderCookie %p\r\n", (PVOID)var);
-            }
-
+        var = 0;
+        if (kdGetAddressFromSymbol(
+            &g_kdctx,
+            TEXT("ObHeaderCookie"),
+            &var))
+        {
+            DbgPrint("ObHeaderCookie %p\r\n", (PVOID)var);
         }
 
     }
@@ -1115,7 +1106,7 @@ VOID TestStart(
     //TestShadowDirectory();
     //TestPsObjectSecurity();
     //TestLicenseCache();
-    //TestApiSetResolve();
+    TestApiSetResolve();
     //TestDesktop();
     //TestApiPort();
     //TestAlpcPortOpen();

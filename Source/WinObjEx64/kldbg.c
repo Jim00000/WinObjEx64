@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        17 May 2021
+*  DATE:        31 May 2021
 *
 *  MINIMUM SUPPORTED OS WINDOWS 7
 *
@@ -20,6 +20,7 @@
 #include "ntos\ntldr.h"
 #include "hde\hde64.h"
 #include "kldbg_patterns.h"
+#include "ksymbols.h"
 
 //
 // Global variables
@@ -1357,7 +1358,7 @@ UCHAR ObDecodeTypeIndex(
 *
 * Purpose:
 *
-* Parse ObGetObjectType and extract object header cookie variable address
+* Parse ObGetObjectType and extract object header cookie variable address.
 *
 * Limitation:
 *
@@ -1371,7 +1372,7 @@ BOOLEAN ObpFindHeaderCookie(
     BOOLEAN    bResult = FALSE;
     UCHAR      cookieValue = 0;
     PBYTE      ptrCode;
-    ULONG_PTR  Address;
+    ULONG_PTR  lookupAddress;
 
     ULONG_PTR NtOsBase;
     HMODULE hNtOs;
@@ -1388,23 +1389,44 @@ BOOLEAN ObpFindHeaderCookie(
 
         do {
 
-            ptrCode = (PBYTE)GetProcAddress(hNtOs, "ObGetObjectType");
-            if (ptrCode == NULL)
-                break;
+            lookupAddress = 0;
 
-            Address = ObFindAddress(NtOsBase,
-                (ULONG_PTR)hNtOs,
-                IL_ObHeaderCookie,
-                ptrCode,
-                DA_ScanBytesObHeaderCookie,
-                ObHeaderCookiePattern,
-                sizeof(ObHeaderCookiePattern));
+            //
+            // If symbols available, lookup address from them.
+            //
+            if (kdIsSymAvailable(Context)) {
 
-            if (!kdAddressInNtOsImage((PVOID)Address))
-                break;
+                kdGetAddressFromSymbol(
+                    Context,
+                    KVAR_ObHeaderCookie,
+                    &lookupAddress);
+
+            }
+
+            //
+            // No symbols available or there is an error, switch to signature search.
+            //
+            if (lookupAddress == 0) {
+
+                ptrCode = (PBYTE)GetProcAddress(hNtOs, "ObGetObjectType");
+                if (ptrCode == NULL)
+                    break;
+
+                lookupAddress = ObFindAddress(NtOsBase,
+                    (ULONG_PTR)hNtOs,
+                    IL_ObHeaderCookie,
+                    ptrCode,
+                    DA_ScanBytesObHeaderCookie,
+                    ObHeaderCookiePattern,
+                    sizeof(ObHeaderCookiePattern));
+
+                if (!kdAddressInNtOsImage((PVOID)lookupAddress))
+                    break;
+
+            }
 
             if (!kdReadSystemMemoryEx(
-                Address,
+                lookupAddress,
                 &cookieValue,
                 sizeof(cookieValue),
                 NULL))
@@ -1443,6 +1465,8 @@ BOOLEAN ObpFindProcessObjectOffsets(
     ULONG_PTR NtOsBase;
     HMODULE hNtOs;
 
+    ULONG offsetValue;
+
     hde64s  hs;
 
     PEPROCESS_OFFSET pOffsetProcessId = &Context->Data->PsUniqueProcessId;
@@ -1454,6 +1478,42 @@ BOOLEAN ObpFindProcessObjectOffsets(
         hNtOs = (HMODULE)Context->NtOsImageMap;
 
         do {
+
+            //
+            // If symbols available try lookup field offset from them.
+            //
+            if (kdIsSymAvailable(Context)) {
+
+                if (pOffsetProcessId->Valid == FALSE) {
+
+                    offsetValue = 0;
+                    if (kdGetFieldOffsetFromSymbol(
+                        Context,
+                        KSYM_EPROCESS,
+                        KFLD_UniqueProcessId,
+                        &offsetValue))
+                    {
+                        pOffsetProcessId->OffsetValue = offsetValue;
+                        pOffsetProcessId->Valid = TRUE;
+                    }
+
+                }
+
+                if (pOffsetImageName->Valid == FALSE) {
+
+                    offsetValue = 0;
+                    if (kdGetFieldOffsetFromSymbol(
+                        Context,
+                        KSYM_EPROCESS,
+                        KFLD_ImageFileName,
+                        &offsetValue))
+                    {
+                        pOffsetImageName->OffsetValue = offsetValue;
+                        pOffsetImageName->Valid = TRUE;
+                    }
+
+                }
+            }
 
             if (pOffsetProcessId->Valid == FALSE) {
 
@@ -1517,7 +1577,7 @@ PVOID ObFindPrivateNamespaceLookupTable2(
     _In_ PKLDBGCONTEXT Context
 )
 {
-    ULONG_PTR Address = 0;
+    ULONG_PTR varAddress = 0;
 
     PVOID   SectionBase;
     ULONG   SectionSize = 0;
@@ -1534,87 +1594,111 @@ PVOID ObFindPrivateNamespaceLookupTable2(
     do {
 
         //
-        // Locate .text image section.
+        // Symbols lookup.
         //
-        SectionBase = supLookupImageSectionByName(TEXT_SECTION,
-            TEXT_SECTION_LEGNTH,
-            (PVOID)hNtOs,
-            &SectionSize);
+        if (kdIsSymAvailable(Context)) {
 
-        if ((SectionBase == NULL) || (SectionSize == 0))
-            break;
+            kdGetAddressFromSymbol(
+                Context,
+                KVAR_PspHostSiloGlobals,
+                &varAddress);
+
+        }
 
         //
-        // Locate starting point for search ->
-        // PsGetServerSiloServiceSessionId for RS4+ and PsGetServerSiloGlobals for RS1-RS3.
+        // Pattern search.
         //
-        if (g_NtBuildNumber >= NT_WIN10_REDSTONE4) {
+        if (varAddress == 0) {
 
-            ptrCode = (PBYTE)GetProcAddress(hNtOs, "PsGetServerSiloServiceSessionId");
+            //
+            // Locate .text image section.
+            //
+            SectionBase = supLookupImageSectionByName(TEXT_SECTION,
+                TEXT_SECTION_LEGNTH,
+                (PVOID)hNtOs,
+                &SectionSize);
+
+            if ((SectionBase == NULL) || (SectionSize == 0))
+                break;
+
+            //
+            // Locate starting point for search ->
+            // PsGetServerSiloServiceSessionId for RS4+ and PsGetServerSiloGlobals for RS1-RS3.
+            //
+            if (g_NtBuildNumber >= NT_WIN10_REDSTONE4) {
+
+                ptrCode = (PBYTE)GetProcAddress(hNtOs, "PsGetServerSiloServiceSessionId");
+
+            }
+            else {
+
+                switch (g_NtBuildNumber) {
+
+                case NT_WIN10_REDSTONE1:
+                    SignatureSize = sizeof(PsGetServerSiloGlobalsPattern_14393);
+                    Signature = PsGetServerSiloGlobalsPattern_14393;
+                    break;
+                case NT_WIN10_REDSTONE2:
+                case NT_WIN10_REDSTONE3:
+                    SignatureSize = sizeof(PsGetServerSiloGlobalsPattern_15064_16299);
+                    Signature = PsGetServerSiloGlobalsPattern_15064_16299;
+                    break;
+                default:
+                    //
+                    // We need to fail if this is unknown release.
+                    //
+                    return NULL;
+                }
+
+                ptrCode = (PBYTE)supFindPattern((PBYTE)SectionBase,
+                    SectionSize,
+                    Signature,
+                    SignatureSize);
+            }
+
+            if (ptrCode == NULL)
+                break;
+
+            //
+            // Find address to PspHostSiloGlobals in code.
+            //
+            varAddress = ObFindAddress((ULONG_PTR)Context->NtOsBase,
+                (ULONG_PTR)hNtOs,
+                IL_PspHostSiloGlobals,
+                ptrCode,
+                DA_ScanBytesPNSVariant1,
+                LeaPattern_PNS,
+                sizeof(LeaPattern_PNS));
+
+            if (!kdAddressInNtOsImage((PVOID)varAddress))
+                return NULL;
+
+        }
+
+        //
+        // Dump PspHostSiloGlobals.
+        //
+        RtlSecureZeroMemory(&PspHostSiloGlobals, sizeof(PspHostSiloGlobals));
+
+        if (kdReadSystemMemoryEx(varAddress,
+            &PspHostSiloGlobals,
+            sizeof(PspHostSiloGlobals),
+            NULL))
+        {
+            //
+            // Return adjusted address of PrivateNamespaceLookupTable.
+            //
+            varAddress += FIELD_OFFSET(OBP_SILODRIVERSTATE, PrivateNamespaceLookupTable);
 
         }
         else {
-
-            switch (g_NtBuildNumber) {
-
-            case NT_WIN10_REDSTONE1:
-                SignatureSize = sizeof(PsGetServerSiloGlobalsPattern_14393);
-                Signature = PsGetServerSiloGlobalsPattern_14393;
-                break;
-            case NT_WIN10_REDSTONE2:
-            case NT_WIN10_REDSTONE3:
-                SignatureSize = sizeof(PsGetServerSiloGlobalsPattern_15064_16299);
-                Signature = PsGetServerSiloGlobalsPattern_15064_16299;
-                break;
-            default:
-                //
-                // We need to fail if this is unknown release.
-                //
-                return NULL;
-            }
-
-            ptrCode = (PBYTE)supFindPattern((PBYTE)SectionBase,
-                SectionSize,
-                Signature,
-                SignatureSize);
+            varAddress = 0;
         }
 
-        if (ptrCode == NULL)
-            break;
-
-        //
-        // Find address to PspHostSiloGlobals in code.
-        //
-        Address = ObFindAddress((ULONG_PTR)Context->NtOsBase,
-            (ULONG_PTR)hNtOs,
-            IL_PspHostSiloGlobals,
-            ptrCode,
-            DA_ScanBytesPNSVariant1,
-            LeaPattern_PNS,
-            sizeof(LeaPattern_PNS));
-
-        if (kdAddressInNtOsImage((PVOID)Address)) {
-            //
-            // Dump PspHostSiloGlobals.
-            //
-            RtlSecureZeroMemory(&PspHostSiloGlobals, sizeof(PspHostSiloGlobals));
-
-            if (kdReadSystemMemoryEx(Address,
-                &PspHostSiloGlobals,
-                sizeof(PspHostSiloGlobals),
-                NULL))
-            {
-                //
-                // Return adjusted address of PrivateNamespaceLookupTable.
-                //
-                Address += FIELD_OFFSET(OBP_SILODRIVERSTATE, PrivateNamespaceLookupTable);
-
-            }
-        }
 
     } while (FALSE);
 
-    return (PVOID)Address;
+    return (PVOID)varAddress;
 }
 
 /*
@@ -1724,6 +1808,72 @@ PVOID ObGetCallbackBlockRoutine(
 }
 
 /*
+* kdpFindKiServiceTableByPattern
+*
+* Purpose:
+*
+* Signature pattern based search for service table address.
+*
+*/
+BOOL kdpFindKiServiceTableByPattern(
+    _In_ ULONG_PTR MappedImageBase,
+    _In_ ULONG_PTR KernelImageBase,
+    _Out_ ULONG_PTR *Address
+)
+{
+    ULONG signatureSize;
+    ULONG sectionSize;
+    ULONG_PTR lookupAddress = 0, varAddress = 0, sectionBase = 0;
+
+    *Address = 0;
+
+    //
+    // Locate .text image section.
+    //
+    sectionBase = (ULONG_PTR)supLookupImageSectionByName(TEXT_SECTION,
+        TEXT_SECTION_LEGNTH,
+        (PVOID)MappedImageBase,
+        &sectionSize);
+
+    if (sectionBase == 0 || sectionSize == 0)
+        return FALSE;
+
+    signatureSize = sizeof(KiSystemServiceStartPattern);
+    if (signatureSize > sectionSize)
+        return FALSE;
+
+    //
+    // Find KiSystemServiceStart signature.
+    //
+    lookupAddress = (ULONG_PTR)supFindPattern(
+        (PBYTE)sectionBase,
+        sectionSize,
+        (PBYTE)KiSystemServiceStartPattern,
+        signatureSize);
+
+    if (lookupAddress == 0)
+        return FALSE;
+
+    lookupAddress += signatureSize;
+
+    //
+    // Find KeServiceDescriptorTableShadow.
+    //
+    varAddress = ObFindAddress(KernelImageBase,
+        (ULONG_PTR)MappedImageBase,
+        IL_KeServiceDescriptorTableShadow,
+        (PBYTE)lookupAddress,
+        DA_ScanBytesKeServiceDescriptorTableShadow,
+        LeaPattern_KeServiceDescriptorTableShadow,
+        sizeof(LeaPattern_KeServiceDescriptorTableShadow));
+
+    if (kdAddressInNtOsImage((PVOID)varAddress))
+        *Address = varAddress;
+
+    return TRUE;
+}
+
+/*
 * kdFindServiceTable
 *
 * Purpose:
@@ -1734,107 +1884,73 @@ PVOID ObGetCallbackBlockRoutine(
 BOOL kdFindKiServiceTable(
     _In_ ULONG_PTR MappedImageBase,
     _In_ ULONG_PTR KernelImageBase,
-    _Out_ KSERVICE_TABLE_DESCRIPTOR * ServiceTable
+    _Inout_ KSERVICE_TABLE_DESCRIPTOR* ServiceTable
 )
 {
-    BOOL            bResult = FALSE;
-    ULONG           SignatureSize;
-    ULONG           SectionSize;
-    ULONG_PTR       LookupAddress = 0, Address = 0, SectionBase = 0;
+    ULONG_PTR varAddress = 0;
 
-    KSERVICE_TABLE_DESCRIPTOR ServiceTableDescriptor[2];
+    KSERVICE_TABLE_DESCRIPTOR tempTable;
 
     __try {
 
         //
-        // Assume failure.
+        // If KeServiceDescriptorTableShadow was not extracted then extract it otherwise use ready address.
         //
-        if (ServiceTable)
-            RtlSecureZeroMemory(ServiceTable, sizeof(KSERVICE_TABLE_DESCRIPTOR));
-        else
+        if (g_kdctx.Data->KeServiceDescriptorTableShadowPtr) {
+
+            varAddress = g_kdctx.Data->KeServiceDescriptorTableShadowPtr;
+
+        }
+        else {
+
+            //
+            // Symbols lookup.
+            //
+            if (kdIsSymAvailable(&g_kdctx)) {
+
+                kdGetAddressFromSymbol(
+                    &g_kdctx,
+                    KVAR_KeServiceDescriptorTableShadow,
+                    &varAddress);
+
+            }
+
+            if (varAddress == 0) {
+
+                if (!kdpFindKiServiceTableByPattern(MappedImageBase,
+                    KernelImageBase,
+                    &varAddress))
+                {
+                    return FALSE;
+                }
+
+            }
+
+            g_kdctx.Data->KeServiceDescriptorTableShadowPtr = varAddress;
+
+        }
+
+        RtlSecureZeroMemory(&tempTable, sizeof(KSERVICE_TABLE_DESCRIPTOR));
+
+        if (!kdReadSystemMemoryEx(
+            varAddress,
+            &tempTable,
+            sizeof(KSERVICE_TABLE_DESCRIPTOR),
+            NULL))
+        {
             return FALSE;
+        }
 
-        do {
-
-            //
-            // If KeServiceDescriptorTableShadow is not extracted then extract it.
-            //
-            if (g_kdctx.Data->KeServiceDescriptorTableShadowPtr == 0) {
-
-                //
-                // Locate .text image section.
-                //
-                SectionBase = (ULONG_PTR)supLookupImageSectionByName(TEXT_SECTION,
-                    TEXT_SECTION_LEGNTH,
-                    (PVOID)MappedImageBase,
-                    &SectionSize);
-
-                if ((SectionBase == 0) || (SectionSize == 0))
-                    break;
-
-                SignatureSize = sizeof(KiSystemServiceStartPattern);
-                if (SignatureSize > SectionSize)
-                    break;
-
-                //
-                // Find KiSystemServiceStart signature.
-                //
-                LookupAddress = (ULONG_PTR)supFindPattern((PBYTE)SectionBase,
-                    SectionSize,
-                    (PBYTE)KiSystemServiceStartPattern,
-                    SignatureSize);
-
-                if (LookupAddress == 0)
-                    break;
-
-                LookupAddress += SignatureSize;
-
-                //
-                // Find KeServiceDescriptorTableShadow.
-                //
-                Address = ObFindAddress(KernelImageBase,
-                    (ULONG_PTR)MappedImageBase,
-                    IL_KeServiceDescriptorTableShadow,
-                    (PBYTE)LookupAddress,
-                    DA_ScanBytesKeServiceDescriptorTableShadow,
-                    LeaPattern_KeServiceDescriptorTableShadow,
-                    sizeof(LeaPattern_KeServiceDescriptorTableShadow));
-
-                if (!kdAddressInNtOsImage((PVOID)Address))
-                    break;
-
-                g_kdctx.Data->KeServiceDescriptorTableShadowPtr = Address;
-
-            }
-            else {
-                Address = g_kdctx.Data->KeServiceDescriptorTableShadowPtr;
-            }
-
-
-            RtlSecureZeroMemory(&ServiceTableDescriptor,
-                sizeof(ServiceTableDescriptor));
-
-            if (!kdReadSystemMemoryEx(Address,
-                &ServiceTableDescriptor,
-                sizeof(ServiceTableDescriptor),
-                NULL))
-            {
-                break;
-            }
-
-            RtlCopyMemory(ServiceTable,
-                &ServiceTableDescriptor[0],
-                sizeof(KSERVICE_TABLE_DESCRIPTOR));
-
-            bResult = TRUE;
-
-        } while (FALSE);
+        RtlCopyMemory(ServiceTable,
+            &tempTable,
+            sizeof(KSERVICE_TABLE_DESCRIPTOR));
 
     }
     __except (WOBJ_EXCEPTION_FILTER_LOG) {
         return FALSE;
     }
-    return bResult;
+
+    return TRUE;
 }
 
 /*
@@ -3127,44 +3243,69 @@ BOOLEAN kdConnectDriver(
 *
 * Purpose:
 *
-* Find IopInvalidDeviceRequest assuming Windows assigned it to WinDBG driver.
+* Find IopInvalidDeviceRequest.
 *
-* Kldbgdrv only defined:
+* 1. If symbols available - lookup value from them;
+*
+* 2. If they are not or there is an error, assume Windows assigned value to our helper driver IRP_MJ_CREATE_MAILSLOT.
+*
+* wo/kldbgdrv/winio only defined:
 *    IRP_MJ_CREATE
 *    IRP_MJ_CLOSE
 *    IRP_MJ_DEVICE_CONTROL
+*
+* rkhdrv 5+ versions does not define own IRP_MJ_CREATE_MAILSLOT
+*
 */
 PVOID kdQueryIopInvalidDeviceRequest(
     VOID
 )
 {
-    PVOID           pHandler;
+    PVOID           pHandler = NULL;
     POBJINFO        pSelfObj;
     ULONG_PTR       drvObjectAddress;
     DRIVER_OBJECT   drvObject;
 
-    pHandler = NULL;
-    pSelfObj = ObQueryObject(L"\\Driver", KLDBGDRV);
-    if (pSelfObj) {
+    //
+    // Lookup using symbols.
+    //
+    if (kdIsSymAvailable(&g_kdctx)) {
 
-        drvObjectAddress = pSelfObj->ObjectAddress;
+        kdGetAddressFromSymbol(
+            &g_kdctx,
+            KVAR_IopInvalidDeviceRequest,
+            (ULONG_PTR*)&pHandler);
 
-        RtlSecureZeroMemory(&drvObject, sizeof(drvObject));
+    }
 
-        if (kdReadSystemMemoryEx(drvObjectAddress,
-            &drvObject,
-            sizeof(drvObject),
-            NULL))
-        {
-            pHandler = drvObject.MajorFunction[IRP_MJ_CREATE_MAILSLOT];
+    //
+    // Lookup from our helper driver object.
+    //
+    if (pHandler == NULL) {
 
-            //
-            // IopInvalidDeviceRequest is a routine inside ntoskrnl.
-            //
-            if (!kdAddressInNtOsImage(pHandler))
-                pHandler = NULL;
+        pSelfObj = ObQueryObject(L"\\Driver", KLDBGDRV);
+        if (pSelfObj) {
+
+            drvObjectAddress = pSelfObj->ObjectAddress;
+
+            RtlSecureZeroMemory(&drvObject, sizeof(drvObject));
+
+            if (kdReadSystemMemoryEx(drvObjectAddress,
+                &drvObject,
+                sizeof(drvObject),
+                NULL))
+            {
+                pHandler = drvObject.MajorFunction[IRP_MJ_CREATE_MAILSLOT];
+
+                //
+                // IopInvalidDeviceRequest is a routine inside ntoskrnl.
+                //
+                if (!kdAddressInNtOsImage(pHandler))
+                    pHandler = NULL;
+            }
+            supHeapFree(pSelfObj);
         }
-        supHeapFree(pSelfObj);
+
     }
     return pHandler;
 }
@@ -3411,11 +3552,9 @@ BOOL kdLoadSymbolsForNtKernelImage(
 
 #ifndef _DEBUG
     __try {
-        _strcpy(szText, TEXT("Please wait while WinObjEx64 is loading symbols for "));
+        _strcpy(szText, TEXT("Please wait, loading symbols for "));
         _strcat(szText, ImageFileName);
-        hwndBanner = supDisplayLoadBanner(NULL, szText, TRUE);
-        SetCapture(hwndBanner);
-        supSetWaitCursor(TRUE);
+        hwndBanner = supDisplayLoadBanner(NULL, szText, TEXT("Load symbols"), TRUE);
 #endif
 
         bResult = SymContext->Parser.LoadModule(
@@ -3428,9 +3567,8 @@ BOOL kdLoadSymbolsForNtKernelImage(
     }
     __finally {
         if (hwndBanner) {
-            supSetWaitCursor(FALSE);
-            ReleaseCapture();
-            SendMessage(hwndBanner, WM_CLOSE, 0, 0);
+            Sleep(1000);
+            supCloseLoadBanner(hwndBanner);
         }
     }
 #endif
@@ -3690,7 +3828,7 @@ BOOLEAN kdQueryMmUnloadedDrivers(
     BOOLEAN             bResult = FALSE;
 
     HMODULE             hNtOs;
-    ULONG_PTR           NtOsBase, kernelAddress;
+    ULONG_PTR           NtOsBase, lookupAddress = 0;
 
     PBYTE               ptrCode;
     PVOID               SectionBase;
@@ -3711,9 +3849,6 @@ BOOLEAN kdQueryMmUnloadedDrivers(
 
     *UnloadedDrivers = NULL;
 
-    if (!kdConnectDriver())
-        return FALSE;
-
     NtOsBase = (ULONG_PTR)Context->NtOsBase;
     hNtOs = (HMODULE)Context->NtOsImageMap;
 
@@ -3726,108 +3861,131 @@ BOOLEAN kdQueryMmUnloadedDrivers(
         if (kdpMmUnloadedDrivers->Valid == FALSE) {
 
             //
-            // Locate PAGE image section.
+            // Symbols lookup.
             //
-            SectionBase = supLookupImageSectionByName(PAGE_SECTION,
-                PAGE_SECTION_LEGNTH,
-                (PVOID)hNtOs,
-                &SectionSize);
+            if (kdIsSymAvailable(Context)) {
 
-            if ((SectionBase == 0) || (SectionSize == 0))
-                break;
+                kdGetAddressFromSymbol(
+                    Context,
+                    KVAR_MmUnloadedDrivers,
+                    &lookupAddress);
 
-            if (g_NtBuildNumber == NT_WIN10_THRESHOLD1)
-                MiRememberUnloadedDriverPattern[0] = FIX_WIN10_THRESHOULD_REG;
-            else if (g_NtBuildNumber > NT_WIN10_20H1)
-                MiRememberUnloadedDriverPattern[0] = FIX_WIN10_20H1_REG;
+            }
 
-            ptrCode = (PBYTE)supFindPattern((PBYTE)SectionBase,
-                SectionSize,
-                MiRememberUnloadedDriverPattern,
-                sizeof(MiRememberUnloadedDriverPattern));
+            //
+            // Pattern search.
+            //
+            if (lookupAddress == 0) {
 
-            if (ptrCode == NULL)
-                break;
+                //
+                // Locate PAGE image section.
+                //
+                SectionBase = supLookupImageSectionByName(PAGE_SECTION,
+                    PAGE_SECTION_LEGNTH,
+                    (PVOID)hNtOs,
+                    &SectionSize);
 
-            if (RtlPointerToOffset(SectionBase, ptrCode) + 32 > SectionSize)
-                break;
-
-            Index = 0;
-            tempOffset = 0;
-
-            do {
-
-                hde64_disasm(RtlOffsetToPointer(ptrCode, Index), &hs);
-                if (hs.flags & F_ERROR)
+                if ((SectionBase == 0) || (SectionSize == 0))
                     break;
 
-                instLength = hs.len;
+                if (g_NtBuildNumber == NT_WIN10_THRESHOLD1)
+                    MiRememberUnloadedDriverPattern[0] = FIX_WIN10_THRESHOULD_REG;
+                else if (g_NtBuildNumber > NT_WIN10_20H1)
+                    MiRememberUnloadedDriverPattern[0] = FIX_WIN10_20H1_REG;
 
-                //
-                // Call ExAlloc/MiAlloc
-                //
-                if (instLength == 5) {
+                ptrCode = (PBYTE)supFindPattern((PBYTE)SectionBase,
+                    SectionSize,
+                    MiRememberUnloadedDriverPattern,
+                    sizeof(MiRememberUnloadedDriverPattern));
 
-                    if (ptrCode[Index] == 0xE8) {
+                if (ptrCode == NULL)
+                    break;
 
-                        //
-                        // Fetch next instruction
-                        //
-                        tempOffset = Index + instLength;
+                if (RtlPointerToOffset(SectionBase, ptrCode) + 32 > SectionSize)
+                    break;
 
-                        hde64_disasm(RtlOffsetToPointer(ptrCode, tempOffset), &hs);
-                        if (hs.flags & F_ERROR)
-                            break;
+                Index = 0;
+                tempOffset = 0;
 
-                        //
-                        // Must be MOV
-                        //
-                        if (hs.len == 7) {
+                do {
 
-                            if (ptrCode[tempOffset] == 0x48) {
+                    hde64_disasm(RtlOffsetToPointer(ptrCode, Index), &hs);
+                    if (hs.flags & F_ERROR)
+                        break;
 
-                                Index = tempOffset;
-                                instLength = hs.len;
+                    instLength = hs.len;
 
-                                relativeValue = *(PLONG)(ptrCode + tempOffset + (hs.len - 4));
+                    //
+                    // Call ExAlloc/MiAlloc
+                    //
+                    if (instLength == 5) {
+
+                        if (ptrCode[Index] == 0xE8) {
+
+                            //
+                            // Fetch next instruction
+                            //
+                            tempOffset = Index + instLength;
+
+                            hde64_disasm(RtlOffsetToPointer(ptrCode, tempOffset), &hs);
+                            if (hs.flags & F_ERROR)
                                 break;
 
-                            }
+                            //
+                            // Must be MOV
+                            //
+                            if (hs.len == 7) {
 
+                                if (ptrCode[tempOffset] == 0x48) {
+
+                                    Index = tempOffset;
+                                    instLength = hs.len;
+
+                                    relativeValue = *(PLONG)(ptrCode + tempOffset + (hs.len - 4));
+                                    break;
+
+                                }
+
+                            }
                         }
+
                     }
 
-                }
+                    Index += instLength;
 
-                Index += instLength;
+                } while (Index < 32);
 
-            } while (Index < 32);
+                if ((relativeValue == 0) || (instLength == 0))
+                    break;
 
-            if ((relativeValue == 0) || (instLength == 0))
-                break;
+                //
+                // Resolve MmUnloadedDrivers.
+                //
+                lookupAddress = kdAdjustAddressToNtOsBase((ULONG_PTR)ptrCode, Index, instLength, relativeValue);
+                if (!kdAddressInNtOsImage((PVOID)lookupAddress))
+                    break;
 
-            //
-            // Resolve MmUnloadedDrivers.
-            //
-            kernelAddress = kdAdjustAddressToNtOsBase((ULONG_PTR)ptrCode, Index, instLength, relativeValue);
-            if (!kdAddressInNtOsImage((PVOID)kernelAddress))
-                break;
+            }
 
             //
             // Read ptr value.
             //
-            if (!kdReadSystemMemoryEx(kernelAddress, &kernelAddress, sizeof(ULONG_PTR), &bytesRead))
+            if (!kdReadSystemMemoryEx(lookupAddress, &lookupAddress, sizeof(ULONG_PTR), &bytesRead))
                 break;
 
             //
             // Store resolved array address in the private data context.
             //
-            kdpMmUnloadedDrivers->Address = kernelAddress;
+            kdpMmUnloadedDrivers->Address = lookupAddress;
             kdpMmUnloadedDrivers->Valid = TRUE;
-        
+
         }
         else {
-            kernelAddress = kdpMmUnloadedDrivers->Address;
+
+            //
+            // Array address already resolved.
+            //
+            lookupAddress = kdpMmUnloadedDrivers->Address;
         }
 
         //
@@ -3837,7 +3995,7 @@ BOOLEAN kdQueryMmUnloadedDrivers(
         pvDrivers = (PUNLOADED_DRIVERS)supHeapAlloc(cbData);
         if (pvDrivers) {
 
-            if (!kdReadSystemMemoryEx(kernelAddress, pvDrivers, cbData, &bytesRead))
+            if (!kdReadSystemMemoryEx(lookupAddress, pvDrivers, cbData, &bytesRead))
                 break;
 
             bResult = TRUE;
@@ -3849,11 +4007,11 @@ BOOLEAN kdQueryMmUnloadedDrivers(
 
                 if ((wMax && wLength) && (wLength <= wMax)) {
 
-                    kernelAddress = (ULONG_PTR)pvDrivers[Index].Name.Buffer;
+                    lookupAddress = (ULONG_PTR)pvDrivers[Index].Name.Buffer;
                     bytesRead = wMax;
                     *pwStaticBuffer = 0;
 
-                    if (!kdReadSystemMemoryEx(kernelAddress,
+                    if (!kdReadSystemMemoryEx(lookupAddress,
                         pwStaticBuffer,
                         bytesRead,
                         &bytesRead))
@@ -3945,7 +4103,7 @@ BOOLEAN kdQueryKernelShims(
 )
 {
     PBYTE      ptrCode;
-    ULONG_PTR  Address;
+    ULONG_PTR  lookupAddress = 0;
 
     BOOLEAN  KseEngineDumpValid = FALSE;
 
@@ -3963,45 +4121,76 @@ BOOLEAN kdQueryKernelShims(
 
     __try {
 
+        //
+        // If KseEngine not dumped, locate variable.
+        //
         if (pKseEngineDump->Valid == FALSE) {
-            NtOsBase = (ULONG_PTR)Context->NtOsBase;
-            hNtOs = (HMODULE)Context->NtOsImageMap;
 
-            ptrCode = (PBYTE)GetProcAddress(hNtOs, "KseSetDeviceFlags");
-            if (ptrCode == NULL) {
-                kdDebugPrint("Kse routine not found\r\n");
-                return FALSE;
+            //
+            // If symbols available then lookup kernel variable address from them.
+            //
+            if (kdIsSymAvailable(Context)) {
+
+                kdGetAddressFromSymbol(
+                    Context,
+                    KVAR_KseEngine,
+                    &lookupAddress);
+
             }
 
-            Address = ObFindAddress(NtOsBase,
-                (ULONG_PTR)hNtOs,
-                IL_KseEngine,
-                ptrCode,
-                DA_ScanBytesKseEngine,
-                KseEnginePattern,
-                sizeof(KseEnginePattern));
+            //
+            // Lookup kernel variable address by pattern search.
+            //
+            if (lookupAddress == 0) {
 
-            if (Address == 0) {
-                kdDebugPrint("KseEngine address not found\r\n");
-                return FALSE;
+                NtOsBase = (ULONG_PTR)Context->NtOsBase;
+                hNtOs = (HMODULE)Context->NtOsImageMap;
+
+                ptrCode = (PBYTE)GetProcAddress(hNtOs, "KseSetDeviceFlags");
+                if (ptrCode == NULL) {
+                    kdDebugPrint("Kse routine not found\r\n");
+                    return FALSE;
+                }
+
+                lookupAddress = ObFindAddress(NtOsBase,
+                    (ULONG_PTR)hNtOs,
+                    IL_KseEngine,
+                    ptrCode,
+                    DA_ScanBytesKseEngine,
+                    KseEnginePattern,
+                    sizeof(KseEnginePattern));
+
+                if (lookupAddress == 0) {
+                    kdDebugPrint("KseEngine address not found\r\n");
+                    return FALSE;
+                }
+
+                lookupAddress -= FIELD_OFFSET(KSE_ENGINE, State);
+
             }
 
-            Address -= FIELD_OFFSET(KSE_ENGINE, State);
-            if (!kdAddressInNtOsImage((PVOID)Address)) {
+            if (!kdAddressInNtOsImage((PVOID)lookupAddress)) {
                 kdDebugPrint("KseEngine address is invalid\r\n");
                 return FALSE;
             }
 
-            pKseEngineDump->KseAddress = Address;
+            pKseEngineDump->KseAddress = lookupAddress;
         }
 
+        //
+        // Reinitialize output list in case of refresh.
+        //
         if (RefreshList) {
             kdDestroyShimmedDriversList(pKseEngineDump);
             InitializeListHead(&pKseEngineDump->ShimmedDriversDumpListHead);
         }
 
+        //
+        // Dump KseEngine double linked list.
+        //
+
         KseShimmedDriversListHead = pKseEngineDump->KseAddress + FIELD_OFFSET(KSE_ENGINE, ShimmedDriversListHead);
-        KseEngineDumpValid = TRUE;   
+        KseEngineDumpValid = TRUE;
 
         ListEntry.Blink = ListEntry.Flink = NULL;
 
@@ -4095,6 +4284,29 @@ BOOLEAN kdpOpenLoadDriverPublic(
 }
 
 /*
+* kdIsSymAvailable
+*
+* Purpose:
+*
+* Return TRUE if symbols are initialized.
+*
+*/
+BOOLEAN kdIsSymAvailable(
+    _In_ KLDBGCONTEXT* Context
+)
+{
+    PSYMCONTEXT symContext = (PSYMCONTEXT)Context->NtOsSymContext;
+
+    if (symContext == NULL)
+        return FALSE;
+
+    if (symContext->ModuleBase == 0)
+        return FALSE;
+
+    return TRUE;
+}
+
+/*
 * kdGetFieldOffsetFromSymbol
 *
 * Purpose:
@@ -4114,20 +4326,40 @@ BOOL kdGetFieldOffsetFromSymbol(
 
     *Offset = 0;
 
-    //
-    // Verify context data.
-    //
-    if (Context->NtOsSymContext == NULL)
-        return FALSE;
+    WCHAR szLog[WOBJ_MAX_MESSAGE - 1];
 
-    if (symContext->ModuleBase == 0)
-        return FALSE;
-
-    *Offset = symContext->Parser.GetFieldOffset(
-        symContext,
+    szLog[0] = 0;
+    RtlStringCchPrintfSecure(szLog,
+        RTL_NUMBER_OF(szLog),
+        TEXT("%ws: Retrieving offset for symbol \"%ws\" field \"%ws\""),
+        __FUNCTIONW__,
         SymbolName,
-        FieldName,
-        &bResult);
+        FieldName);
+
+    logAdd(WOBJ_LOG_ENTRY_INFORMATION, szLog);
+
+    __try {
+
+        *Offset = symContext->Parser.GetFieldOffset(
+            symContext,
+            SymbolName,
+            FieldName,
+            &bResult);
+
+    }
+    __except (WOBJ_EXCEPTION_FILTER_LOG) {
+        return FALSE;
+    }
+
+    szLog[0] = 0;
+    RtlStringCchPrintfSecure(szLog,
+        RTL_NUMBER_OF(szLog),
+        TEXT("%ws: Result %lu, field offset 0x%lX"),
+        __FUNCTIONW__,
+        bResult,
+        *Offset);
+
+    logAdd(WOBJ_LOG_ENTRY_INFORMATION, szLog);
 
     return bResult;
 }
@@ -4150,28 +4382,39 @@ BOOL kdGetAddressFromSymbol(
     ULONG_PTR address;
     PSYMCONTEXT symContext = (PSYMCONTEXT)Context->NtOsSymContext;
 
+    WCHAR szLog[WOBJ_MAX_MESSAGE - 1];
+
+    szLog[0] = 0;
+    RtlStringCchPrintfSecure(szLog,
+        RTL_NUMBER_OF(szLog),
+        TEXT("%ws: Retrieving address for symbol \"%ws\""),
+        __FUNCTIONW__,
+        SymbolName);
+
+    logAdd(WOBJ_LOG_ENTRY_INFORMATION, szLog);
+
     *Address = 0;
 
     //
     // Verify context data.
     //
     if (Context->NtOsBase == NULL ||
-        Context->NtOsSize == 0 ||
-        Context->NtOsSymContext == NULL)
+        Context->NtOsSize == 0)
     {
         return FALSE;
     }
 
-    //
-    // Is pdb loaded.
-    //
-    if (symContext->ModuleBase == 0)
-        return FALSE;
+    __try {
 
-    address = symContext->Parser.LookupAddressBySymbol(
-        symContext,
-        SymbolName,
-        &bResult);
+        address = symContext->Parser.LookupAddressBySymbol(
+            symContext,
+            SymbolName,
+            &bResult);
+
+    }
+    __except (WOBJ_EXCEPTION_FILTER_LOG) {
+        return FALSE;
+    }
 
     if (bResult && address) {
 
@@ -4195,10 +4438,28 @@ BOOL kdGetAddressFromSymbol(
 
     }
 
+    szLog[0] = 0;
+    RtlStringCchPrintfSecure(szLog,
+        RTL_NUMBER_OF(szLog),
+        TEXT("%ws: Result %lu, address 0x%llX"),
+        __FUNCTIONW__,
+        bResult,
+        address);
+
+    logAdd(WOBJ_LOG_ENTRY_INFORMATION, szLog);
+
+
     return bResult;
 }
 
-
+/*
+* symCallbackProc
+*
+* Purpose:
+*
+* DbgHelp callback procedure used for tracking symbols loading during startup.
+*
+*/
 BOOL CALLBACK symCallbackProc(
     _In_ HANDLE hProcess,
     _In_ ULONG ActionCode,

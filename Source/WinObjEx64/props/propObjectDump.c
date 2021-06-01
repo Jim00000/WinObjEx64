@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        27 May 2021
+*  DATE:        28 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -4194,6 +4194,7 @@ INT_PTR ObjectDumpInitDialog(
     HWND hwndBanner = supDisplayLoadBanner(
         hwndDlg,
         TEXT("Processing object dump, please wait"),
+        NULL,
         FALSE);
 #endif
     __try {
@@ -4268,7 +4269,7 @@ INT_PTR ObjectDumpInitDialog(
     }
     __finally {
 #ifndef _DEBUG
-        SendMessage(hwndBanner, WM_CLOSE, 0, 0);
+        if (hwndBanner) supCloseLoadBanner(hwndBanner);
 #endif
     }
 

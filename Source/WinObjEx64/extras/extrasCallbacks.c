@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        27 May 2021
+*  DATE:        29 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -4062,12 +4062,13 @@ VOID CallbackDialogContentRefresh(
     HWND hwndBanner = supDisplayLoadBanner(
         hwndDlg,
         TEXT("Processing callbacks list, please wait"),
+        NULL,
         FALSE);
+#else
+    UNREFERENCED_PARAMETER(hwndDlg);
 #endif
 
     __try {
-
-        SetCapture(hwndDlg);
 
         if (fResetContent) TreeList_ClearTree(pDlgContext->TreeList);
 
@@ -4077,9 +4078,8 @@ VOID CallbackDialogContentRefresh(
 
     }
     __finally {
-        ReleaseCapture();
 #ifndef _DEBUG
-        SendMessage(hwndBanner, WM_CLOSE, 0, 0);
+        supCloseLoadBanner(hwndBanner);
 #endif
     }
 }

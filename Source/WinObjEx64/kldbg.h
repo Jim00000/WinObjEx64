@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        27 May 2021
+*  DATE:        31 May 2021
 *
 *  Common header file for the Kernel Debugger Driver support.
 *
@@ -441,7 +441,7 @@ PVOID kdQueryIopInvalidDeviceRequest(
 BOOL kdFindKiServiceTable(
     _In_ ULONG_PTR MappedImageBase,
     _In_ ULONG_PTR KernelImageBase,
-    _Out_ KSERVICE_TABLE_DESCRIPTOR* ServiceTable);
+    _Inout_ KSERVICE_TABLE_DESCRIPTOR* ServiceTable);
 
 ULONG_PTR kdQueryWin32kApiSetTable(
     _In_ HMODULE hWin32k);
@@ -502,6 +502,9 @@ BOOLEAN kdQueryKernelShims(
 BOOLEAN kdQueryMmUnloadedDrivers(
     _In_ PKLDBGCONTEXT Context,
     _Out_ PVOID* UnloadedDrivers);
+
+BOOLEAN kdIsSymAvailable(
+    _In_ KLDBGCONTEXT* Context);
 
 BOOL kdGetFieldOffsetFromSymbol(
     _In_ KLDBGCONTEXT* Context,

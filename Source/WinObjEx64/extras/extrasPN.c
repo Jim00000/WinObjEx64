@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        27 May 2021
+*  DATE:        28 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -24,12 +24,12 @@ OBJECT_COLLECTION PNSCollection;
 ULONG PNSNumberOfObjects = 0;
 
 #ifdef _USE_OWN_DRIVER
-#define T_NAMESPACEQUERYFAILED TEXT("Unable to list namespaces! Make sure you run this program as Admin.")
+#define T_NAMESPACE_QUERY_FAILED TEXT("Unable to list namespaces! Make sure you run this program as Admin.")
 #else
-#define T_NAMESPACEQUERYFAILED TEXT("Unable to list namespaces! Make sure you run this program as Admin and Windows is in a DEBUG mode.")
+#define T_NAMESPACE_QUERY_FAILED TEXT("Unable to list namespaces! Make sure you run this program as Admin and Windows is in a DEBUG mode.")
 #endif
 
-#define T_NAMESPACENOTHING TEXT("No private namespaces found.")
+#define T_NAMESPACE_NOTHING TEXT("No private namespaces found.")
 
 #define COLUMN_PNLIST_ROOTDIRADDRESS 2
 
@@ -241,6 +241,7 @@ BOOL PNDlgQueryInfo(
     hwndBanner = supDisplayLoadBanner(
         hwndDlg,
         TEXT("Loading private namespaces information, please wait"),
+        NULL,
         FALSE);
 #else
     UNREFERENCED_PARAMETER(hwndDlg);
@@ -711,10 +712,10 @@ VOID PNDialogShowInfo(
         ShowWindow(GetDlgItem(PnDlgContext.hwndDlg, ID_PNAMESPACESINFO), SW_SHOW);
 
         if (PNSNumberOfObjects == 0) {
-            SetDlgItemText(PnDlgContext.hwndDlg, ID_PNAMESPACESINFO, T_NAMESPACENOTHING);
+            SetDlgItemText(PnDlgContext.hwndDlg, ID_PNAMESPACESINFO, T_NAMESPACE_NOTHING);
         }
         else {
-            SetDlgItemText(PnDlgContext.hwndDlg, ID_PNAMESPACESINFO, T_NAMESPACEQUERYFAILED);
+            SetDlgItemText(PnDlgContext.hwndDlg, ID_PNAMESPACESINFO, T_NAMESPACE_QUERY_FAILED);
         }
     }
 }

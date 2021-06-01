@@ -1620,19 +1620,9 @@ VOID SdtListCreate(
     PRTL_PROCESS_MODULES pModules = NULL;
     LPWSTR lpStatusMsg;
 
-#ifndef _DEBUG
-    HWND hwndBanner;
-
-    hwndBanner = supDisplayLoadBanner(
-        hwndDlg,
-        TEXT("Loading service table dump, please wait"),
-        FALSE);
-#endif
-
-    supStatusBarSetText(pDlgContext->StatusBar, 1, TEXT("Initializing table view"));
-
-
     __try {
+
+        supStatusBarSetText(pDlgContext->StatusBar, 1, TEXT("Initializing table view"));
 
         pModules = (PRTL_PROCESS_MODULES)supGetLoadedModulesList(NULL);
         if (pModules == NULL) {
@@ -1683,10 +1673,6 @@ VOID SdtListCreate(
                 SdtListOutputTable(hwndDlg, pModules, &W32pServiceTable);
             }
             else {
-
-#ifndef _DEBUG
-                SendMessage(hwndBanner, WM_CLOSE, 0, 0);
-#endif
 
                 switch (returnStatus) {
 
@@ -1743,10 +1729,6 @@ VOID SdtListCreate(
 
         if (pModules)
             supHeapFree(pModules);
-
-#ifndef _DEBUG
-        SendMessage(hwndBanner, WM_CLOSE, 0, 0);
-#endif
 
     }
 

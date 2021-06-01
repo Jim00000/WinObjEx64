@@ -746,7 +746,8 @@ VOID supSetWaitCursor(
 }
 
 typedef struct _SUP_BANNER_DATA {
-    LPWSTR lpText;
+    LPCWSTR lpText;
+    LPCWSTR lpCaption;
     BOOL fList;
 } SUP_BANNER_DATA, * PSUP_BANNER_DATA;
 
@@ -771,12 +772,14 @@ INT_PTR CALLBACK supxLoadBannerDialog(
     switch (uMsg) {
 
     case WM_INITDIALOG:
+
         if (lParam) {
             pvData = (SUP_BANNER_DATA*)lParam;
 
             if (pvData->fList) {
                 SendDlgItemMessage(hwndDlg, IDC_LOADING_MSG, EM_SETLIMITTEXT, 0, 0);
                 supCenterWindowPerScreen(hwndDlg);
+                if (pvData->lpCaption) SetWindowText(hwndDlg, pvData->lpCaption);
                 SendDlgItemMessage(hwndDlg, IDC_LOADING_MSG, EM_REPLACESEL, (WPARAM)0, (LPARAM)pvData->lpText);
             }
             else {
@@ -830,7 +833,8 @@ VOID supUpdateLoadBannerText(
 */
 HWND supDisplayLoadBanner(
     _In_opt_ HWND hwndParent,
-    _In_ LPWSTR lpMessage,
+    _In_ LPCWSTR lpMessage,
+    _In_opt_ LPCWSTR lpCaption,
     _In_ BOOL UseList
 )
 {
@@ -838,6 +842,7 @@ HWND supDisplayLoadBanner(
 
     bannerData.fList = UseList;
     bannerData.lpText = lpMessage;
+    bannerData.lpCaption = lpCaption;
 
     g_hwndBanner = CreateDialogParam(
         g_WinObj.hInstance,
@@ -846,7 +851,32 @@ HWND supDisplayLoadBanner(
         supxLoadBannerDialog,
         (LPARAM)&bannerData);
 
+    if (g_hwndBanner) {
+        supSetWaitCursor(TRUE);
+        SetCapture(g_hwndBanner);
+    }
+
     return g_hwndBanner;
+}
+
+/*
+* supCloseLoadBanner
+*
+* Purpose:
+*
+* End load banner display.
+*
+*/
+VOID supCloseLoadBanner(
+    _In_ HWND hwndBanner
+)
+{
+    if (hwndBanner) {
+        SendMessage(hwndBanner, WM_CLOSE, 0, 0);
+        g_hwndBanner = NULL;
+    }
+    supSetWaitCursor(FALSE);
+    ReleaseCapture();
 }
 
 /*
