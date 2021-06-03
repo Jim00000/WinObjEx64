@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        29 May 2021
+*  DATE:        31 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -4074,10 +4074,15 @@ VOID CallbackDialogContentRefresh(
 
         g_CallbacksCount = 0;
 
+        supTreeListEnableRedraw(pDlgContext->TreeList, FALSE);
+
         DisplayCallbacksList(pDlgContext->TreeList, pDlgContext->StatusBar);
 
     }
     __finally {
+
+        supTreeListEnableRedraw(pDlgContext->TreeList, TRUE);
+
 #ifndef _DEBUG
         supCloseLoadBanner(hwndBanner);
 #endif

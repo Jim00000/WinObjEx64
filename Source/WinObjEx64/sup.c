@@ -15,8 +15,8 @@
 *
 *******************************************************************************/
 #include "global.h"
-#include "treelist\treelist.h"
-#include "extras\extrasSSDT.h"
+#include "treelist/treelist.h"
+#include "extras/extrasSSDT.h"
 
 //
 // Setup info database.
@@ -107,37 +107,6 @@ ULONG supConvertFromPteProtectionMask(
     }
 
     return 0;
-}
-
-/*
-* supTreeListAddItem
-*
-* Purpose:
-*
-* Insert new treelist item.
-*
-*/
-HTREEITEM supTreeListAddItem(
-    _In_ HWND TreeList,
-    _In_opt_ HTREEITEM hParent,
-    _In_ UINT mask,
-    _In_ UINT state,
-    _In_ UINT stateMask,
-    _In_opt_ LPWSTR pszText,
-    _In_opt_ PVOID subitems
-)
-{
-    TVINSERTSTRUCT  tvitem;
-    PTL_SUBITEMS    si = (PTL_SUBITEMS)subitems;
-
-    RtlSecureZeroMemory(&tvitem, sizeof(tvitem));
-    tvitem.hParent = hParent;
-    tvitem.item.mask = mask;
-    tvitem.item.state = state;
-    tvitem.item.stateMask = stateMask;
-    tvitem.item.pszText = pszText;
-    tvitem.hInsertAfter = TVI_LAST;
-    return TreeList_InsertTreeItem(TreeList, &tvitem, si);
 }
 
 /*
@@ -322,6 +291,58 @@ UINT supGetDPIValue(
     }
 
     return uDpi;
+}
+
+/*
+* supTreeListEnableRedraw
+*
+* Purpose:
+*
+* Change treelist redraw state.
+*
+*/
+VOID supTreeListEnableRedraw(
+    _In_ HWND TreeList,
+    _In_ BOOL fEnable
+)
+{
+    if (fEnable) {
+        TreeList_RedrawEnableAndUpdateNow(TreeList);
+    }
+    else {
+        TreeList_RedrawDisable(TreeList);
+    }
+}
+
+/*
+* supTreeListAddItem
+*
+* Purpose:
+*
+* Insert new treelist item.
+*
+*/
+HTREEITEM supTreeListAddItem(
+    _In_ HWND TreeList,
+    _In_opt_ HTREEITEM hParent,
+    _In_ UINT mask,
+    _In_ UINT state,
+    _In_ UINT stateMask,
+    _In_opt_ LPWSTR pszText,
+    _In_opt_ PVOID subitems
+)
+{
+    TVINSERTSTRUCT  tvitem;
+    PTL_SUBITEMS    si = (PTL_SUBITEMS)subitems;
+
+    RtlSecureZeroMemory(&tvitem, sizeof(tvitem));
+    tvitem.hParent = hParent;
+    tvitem.item.mask = mask;
+    tvitem.item.state = state;
+    tvitem.item.stateMask = stateMask;
+    tvitem.item.pszText = pszText;
+    tvitem.hInsertAfter = TVI_LAST;
+    return TreeList_InsertTreeItem(TreeList, &tvitem, si);
 }
 
 /*

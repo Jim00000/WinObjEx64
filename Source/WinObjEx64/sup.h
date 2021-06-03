@@ -194,20 +194,10 @@ typedef struct tagVERHEAD {
 #define supOpenThread ntsupOpenThread
 #define supCICustomKernelSignersAllowed ntsupCICustomKernelSignersAllowed
 #define supPrivilegeEnabled ntsupPrivilegeEnabled
-
 #define supListViewEnableRedraw(ListView, fEnable) SendMessage(ListView, WM_SETREDRAW, (WPARAM)fEnable, (LPARAM)0)
 
 ULONG supConvertFromPteProtectionMask(
     _In_ ULONG ProtectionMask);
-
-HTREEITEM supTreeListAddItem(
-    _In_ HWND TreeList,
-    _In_opt_ HTREEITEM hParent,
-    _In_ UINT mask,
-    _In_ UINT state,
-    _In_ UINT stateMask,
-    _In_opt_ LPWSTR pszText,
-    _In_opt_ PVOID subitems);
 
 BOOL supInitMSVCRT(
     VOID);
@@ -225,6 +215,19 @@ PVOID supHeapAlloc(
 BOOL supHeapFree(
     _In_ PVOID Memory);
 #endif
+
+VOID supTreeListEnableRedraw(
+    _In_ HWND TreeList,
+    _In_ BOOL fEnable);
+
+HTREEITEM supTreeListAddItem(
+    _In_ HWND TreeList,
+    _In_opt_ HTREEITEM hParent,
+    _In_ UINT mask,
+    _In_ UINT state,
+    _In_ UINT stateMask,
+    _In_opt_ LPWSTR pszText,
+    _In_opt_ PVOID subitems);
 
 BOOL supInitTreeListForDump(
     _In_  HWND  hwndParent,

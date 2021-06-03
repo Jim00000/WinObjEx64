@@ -15,7 +15,7 @@
 *
 *******************************************************************************/
 #include "global.h"
-#include "treelist\treelist.h"
+#include "treelist/treelist.h"
 #include "propTypeConsts.h"
 #include "propObjectDumpConsts.h"
 
@@ -4261,7 +4261,13 @@ INT_PTR ObjectDumpInitDialog(
                     supObDumpShowError(hwndDlg, NULL);
                 }
                 else {
+
+                    supTreeListEnableRedraw(g_TreeList, FALSE);
+
                     ObDumpRoutine(Context, hwndDlg);
+
+                    supTreeListEnableRedraw(g_TreeList, TRUE);
+
                 }
             }
 

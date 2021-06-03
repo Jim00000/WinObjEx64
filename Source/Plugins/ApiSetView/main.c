@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2019 - 2020
+*  (C) COPYRIGHT AUTHORS, 2019 - 2021
 *
 *  TITLE:       MAIN.H
 *
-*  VERSION:     1.03
+*  VERSION:     1.11
 *
-*  DATE:        30 Nov 2020
+*  DATE:        01 June 2021
 *
 *  WinObjEx64 ApiSetView plugin.
 *
@@ -445,7 +445,7 @@ DWORD WINAPI PluginThread(
         TranslateMessage(&msg1);
         DispatchMessage(&msg1);
 
-    } while ((rv != 0) && (g_PluginQuit == FALSE));
+    } while (rv != 0 && g_PluginQuit == FALSE);
 
     PluginFreeGlobalResources();
 
@@ -473,30 +473,34 @@ NTSTATUS CALLBACK StartPlugin(
     RtlSecureZeroMemory(&g_ctx, sizeof(g_ctx));
 
     g_ctx.PluginHeap = HeapCreate(0, 0, 0);
-    if (g_ctx.PluginHeap == NULL)
-        return STATUS_MEMORY_NOT_ALLOCATED;
+    if (g_ctx.PluginHeap) {
 
-    HeapSetInformation(g_ctx.PluginHeap, HeapEnableTerminationOnCorruption, NULL, 0);
+        HeapSetInformation(g_ctx.PluginHeap, HeapEnableTerminationOnCorruption, NULL, 0);
 
-    RtlCopyMemory(&g_ctx.ParamBlock, ParamBlock, sizeof(WINOBJEX_PARAM_BLOCK));
+        RtlCopyMemory(&g_ctx.ParamBlock, ParamBlock, sizeof(WINOBJEX_PARAM_BLOCK));
 
-    g_ctx.WorkerThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)PluginThread, (PVOID)NULL, 0, &ThreadId);
-    if (g_ctx.WorkerThread) {
-        Status = STATUS_SUCCESS;
+        g_ctx.WorkerThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)PluginThread, (PVOID)NULL, 0, &ThreadId);
+        if (g_ctx.WorkerThread) {
+            Status = STATUS_SUCCESS;
+        }
+        else {
+            Status = STATUS_UNSUCCESSFUL;
+            HeapDestroy(g_ctx.PluginHeap);
+            g_ctx.PluginHeap = NULL;
+        }
+
+        if (NT_SUCCESS(Status))
+            State = PluginRunning;
+        else
+            State = PluginError;
+
+        if (g_Plugin->StateChangeCallback)
+            g_Plugin->StateChangeCallback(g_Plugin, State, NULL);
+
     }
     else {
-        Status = STATUS_UNSUCCESSFUL;
-        HeapDestroy(g_ctx.PluginHeap);
-        g_ctx.PluginHeap = NULL;
+        Status = STATUS_MEMORY_NOT_ALLOCATED;
     }
-
-    if (NT_SUCCESS(Status))
-        State = PluginRunning;
-    else
-        State = PluginError;
-
-    if (g_Plugin->StateChangeCallback)
-        g_Plugin->StateChangeCallback(g_Plugin, State, NULL);
 
     return Status;
 }

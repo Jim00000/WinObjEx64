@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        11 May 2021
+*  DATE:        31 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -480,6 +480,7 @@ VOID AlpcPortListSetInfo(
     WCHAR szBuffer[100];
 
     ListView_DeleteAllItems(pDlgContext->ListView);
+    supListViewEnableRedraw(pDlgContext->ListView, FALSE);
 
     if (AlpcPortEnumerateClients(Context->ObjectInfo.ObjectAddress,
         (POUTPUT_CLIENTS_CALLBACK)AlpcPortEnumerateCallback,
@@ -496,6 +497,7 @@ VOID AlpcPortListSetInfo(
         SetDlgItemText(hwndDlg, ID_ALPCLISTMSG, TEXT("Error, not all connections listed"));
 
     }
+    supListViewEnableRedraw(pDlgContext->ListView, TRUE);
 }
 
 /*

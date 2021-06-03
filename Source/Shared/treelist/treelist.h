@@ -4,9 +4,9 @@
 *
 *  TITLE:       TREELIST.H
 *
-*  VERSION:     1.31
+*  VERSION:     1.32
 *
-*  DATE:        02 May 2021
+*  DATE:        01 June 2021
 *
 *  Tree-List custom control header file.
 *
@@ -92,6 +92,12 @@ ATOM InitializeTreeListControl();
 
 #define TreeList_SetImageList(hwnd, himl, iImage) \
     (HIMAGELIST)SNDMSG((hwnd), TVM_SETIMAGELIST, iImage, (LPARAM)(HIMAGELIST)(himl))
+
+#define TreeList_RedrawDisable(hwnd) \
+    SNDMSG(hwnd, WM_SETREDRAW, FALSE, 0)
+
+#define TreeList_RedrawEnableAndUpdateNow(hwnd) { SNDMSG(hwnd, WM_SETREDRAW, TRUE, 0); \
+    RedrawWindow(hwnd, NULL, NULL, RDW_ERASE | RDW_INVALIDATE); }
 
 #define TreeList_GetChild(hwnd, hitem)          TreeList_GetNextItem(hwnd, hitem, TVGN_CHILD)
 #define TreeList_GetNextSibling(hwnd, hitem)    TreeList_GetNextItem(hwnd, hitem, TVGN_NEXT)

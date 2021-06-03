@@ -697,6 +697,8 @@ VOID SectionPropertiesCreate(
 
     if (supInitTreeListForDump(hwndDlg, &DlgContext->TreeList)) {
 
+        supTreeListEnableRedraw(DlgContext->TreeList, FALSE);
+
         rootItem = SectionObjectCreateNode(DlgContext->TreeList,
             TEXT("SECTION"),
             NULL,
@@ -735,6 +737,8 @@ VOID SectionPropertiesCreate(
             }
 
         }
+
+        supTreeListEnableRedraw(DlgContext->TreeList, TRUE);
 
     }
 }

@@ -6,7 +6,7 @@
 *
 *  VERSION:     1.90
 *
-*  DATE:        27 May 2021
+*  DATE:        31 May 2021
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -950,7 +950,7 @@ DWORD WINAPI CreateThreadListProc(
                 // Module (for system threads)
                 //
                 szBuffer[0] = 0;
-                if ((startAddress > g_kdctx.SystemRangeStart) && (pModules)) {
+                if (startAddress > g_kdctx.SystemRangeStart && pModules) {
                     if (!ntsupFindModuleNameByAddress(
                         pModules,
                         (PVOID)startAddress,
@@ -1043,12 +1043,11 @@ DWORD WINAPI CreateProcessListProc(
     ServicesList.Entries = NULL;
     ServicesList.NumberOfEntries = 0;
 
-    InitializeListHead(&g_PsListHead);
-
     __try {
         dwWaitResult = WaitForSingleObject(g_PsListWait, INFINITE);
         if (dwWaitResult == WAIT_OBJECT_0) {
 
+            InitializeListHead(&g_PsListHead);
             InterlockedIncrement((PLONG)&g_DialogRefresh);
 
             supSetWaitCursor(TRUE);
@@ -1638,8 +1637,10 @@ VOID extrasCreatePsListDialog(
     g_DialogQuit = 0;
     g_DialogRefresh = 0;
     g_PsListWait = CreateMutex(NULL, FALSE, NULL);
-    g_PsListHeap = RtlCreateHeap(HEAP_GROWABLE, NULL, 0, 0, NULL, NULL);
-    if (g_PsListHeap) {
-        CreateObjectList(FALSE, NULL);
+    if (g_PsListWait) {
+        g_PsListHeap = RtlCreateHeap(HEAP_GROWABLE, NULL, 0, 0, NULL, NULL);
+        if (g_PsListHeap) {
+            CreateObjectList(FALSE, NULL);
+        }
     }
 }
