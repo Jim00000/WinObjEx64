@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2019 - 2020
+*  (C) COPYRIGHT AUTHORS, 2019 - 2021
 *
 *  TITLE:       UI.H
 *
-*  VERSION:     1.01
+*  VERSION:     1.11
 *
-*  DATE:        30 Nov 2020
+*  DATE:        01 June 2021
 *
 *  WinObjEx64 ApiSetView UI constants, definitions and includes.
 *
@@ -28,6 +28,8 @@
 typedef struct _GUI_CONTEXT {
     HWND MainWindow;
     HWND TreeList;
+    HWND SearchEdit;
+    HWND SchemaFileEdit;
     HANDLE PluginHeap;
     HANDLE WorkerThread;
     HICON WindowIcon;

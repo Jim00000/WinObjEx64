@@ -18,4 +18,5 @@
 #pragma once
 
 VOID ListApiSetFromFile(
-    _In_opt_ LPCWSTR lpFileName);
+    _In_opt_ LPCWSTR lpFileName,
+    _In_opt_ LPCWSTR FilterByName);

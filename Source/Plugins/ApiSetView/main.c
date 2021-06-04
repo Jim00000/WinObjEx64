@@ -59,82 +59,6 @@ BOOL OpenDialogExecute(
 }
 
 /*
-* TreeView_FindLabel
-*
-* Purpose:
-*
-* Find treelist entry by label.
-*
-*/
-HTREEITEM TreeView_FindLabel(
-    _In_ HWND hwnd,
-    _In_ HTREEITEM hItemParent,
-    _In_ LPCWSTR pszLabel)
-{
-    TVITEMEX tvi;
-    HTREEITEM hChildSearch;
-    WCHAR wchLabel[MAX_PATH];
-
-    for (tvi.hItem = TreeView_GetChild(hwnd, hItemParent);
-        tvi.hItem;
-        tvi.hItem = TreeView_GetNextSibling(hwnd, tvi.hItem))
-    {
-        tvi.mask = TVIF_TEXT | TVIF_CHILDREN;
-        tvi.pszText = wchLabel;
-        tvi.cchTextMax = MAX_PATH;
-        if (TreeList_GetTreeItem(hwnd, &tvi, NULL)) {
-            if (_strcmpi(tvi.pszText, pszLabel) == 0)
-                return tvi.hItem;
-
-            if (tvi.cChildren) {
-                hChildSearch = TreeView_FindLabel(hwnd, tvi.hItem, pszLabel);
-                if (hChildSearch)
-                    return hChildSearch;
-            }
-        }
-    }
-    return 0;
-}
-
-/*
-* HandleSearchSchema
-*
-* Purpose:
-*
-* Search in treelist.
-*
-*/
-VOID HandleSearchSchema(
-    _In_ HWND hwndDlg)
-{
-    HTREEITEM hItem;
-    WCHAR szSchemaName[MAX_PATH * 2];
-
-    RtlSecureZeroMemory(szSchemaName, sizeof(szSchemaName));
-
-    SendDlgItemMessage(
-        hwndDlg,
-        IDC_SEARCH_EDIT,
-        WM_GETTEXT,
-        (WPARAM)MAX_PATH,
-        (LPARAM)&szSchemaName);
-
-#pragma warning(push)
-#pragma warning(disable: 6054)
-    hItem = TreeView_FindLabel(
-        g_ctx.TreeList,
-        TreeView_GetRoot(g_ctx.TreeList),
-        szSchemaName);
-#pragma warning(pop)
-
-    if (hItem) {
-        TreeList_EnsureVisible(g_ctx.TreeList, hItem);
-        TreeList_Expand(g_ctx.TreeList, hItem, TVE_EXPAND);
-        SetFocus(g_ctx.TreeList);
-    }
-}
-
-/*
 * PluginHandleWMNotify
 *
 * Purpose:
@@ -300,13 +224,17 @@ INT_PTR CALLBACK PluginDialogProc(
 {
     HANDLE hIcon;
     HTREEITEM hRoot;
-    WCHAR szOpenFileName[MAX_PATH + 1];
+    LPWSTR lpFilter = NULL;
+    WCHAR szFileName[MAX_PATH + 1];
+    WCHAR szFilterOption[MAX_PATH + 1];
 
     switch (uMsg) {
 
     case WM_INITDIALOG:
 
         g_ctx.MainWindow = hwndDlg;
+        g_ctx.SchemaFileEdit = GetDlgItem(hwndDlg, IDC_SCHEMA_FILE);
+        g_ctx.SearchEdit = GetDlgItem(hwndDlg, IDC_SEARCH_EDIT);
 
         hIcon = LoadImage(
             g_ctx.ParamBlock.Instance,
@@ -319,11 +247,11 @@ INT_PTR CALLBACK PluginDialogProc(
             SendMessage(hwndDlg, WM_SETICON, (WPARAM)ICON_SMALL, (LPARAM)hIcon);
             SendMessage(hwndDlg, WM_SETICON, (WPARAM)ICON_BIG, (LPARAM)hIcon);
             g_ctx.WindowIcon = hIcon;
-            
+
         }
 
         if (InitTreeList(hwndDlg, &g_ctx.TreeList)) {
-            ListApiSetFromFile(NULL);
+            ListApiSetFromFile(NULL, NULL);
         }
         else {
             MessageBox(g_ctx.MainWindow,
@@ -354,17 +282,54 @@ INT_PTR CALLBACK PluginDialogProc(
     case WM_COMMAND:
 
         switch (GET_WM_COMMAND_ID(wParam, lParam)) {
-        case IDC_SEARCH_BUTTON:
-            HandleSearchSchema(hwndDlg);
+        case IDC_SEARCH_EDIT:
+            if (GET_WM_COMMAND_CMD(wParam, lParam) == EN_CHANGE) {
+
+                RtlSecureZeroMemory(szFilterOption, sizeof(szFilterOption));
+                if (GetWindowText(
+                    g_ctx.SearchEdit,
+                    szFilterOption,
+                    MAX_PATH))
+                {
+                    if (szFilterOption[0] != 0) {
+                        lpFilter = szFilterOption;
+                    }
+                }
+
+                RtlSecureZeroMemory(szFileName, sizeof(szFileName));
+                if (GetWindowText(
+                    g_ctx.SchemaFileEdit,
+                    szFileName,
+                    MAX_PATH))
+                {
+                    ListApiSetFromFile(szFileName, lpFilter);
+                }
+
+            }
             break;
 
         case IDC_BROWSE_BUTTON:
-            RtlSecureZeroMemory(szOpenFileName, sizeof(szOpenFileName));
+
+            RtlSecureZeroMemory(szFileName, sizeof(szFileName));
             if (OpenDialogExecute(hwndDlg,
-                szOpenFileName,
+                szFileName,
                 TEXT("All files\0*.*\0\0")))
             {
-                ListApiSetFromFile(szOpenFileName);
+                SetWindowText(g_ctx.SearchEdit, TEXT(""));
+
+                /*
+                szFilterOption[0] = 0;
+                if (GetWindowText(
+                    g_ctx.SearchEdit,
+                    szFilterOption,
+                    MAX_PATH))
+                {
+                    if (szFilterOption[0] != 0) {
+                        lpFilter = szFilterOption;
+                    }
+                }
+                */
+                ListApiSetFromFile(szFileName, NULL);
             }
             break;
 
@@ -559,7 +524,7 @@ BOOLEAN CALLBACK PluginInit(
         //
         // Set plugin description.
         //
-        StringCbCopy(PluginData->Description, sizeof(PluginData->Description), 
+        StringCbCopy(PluginData->Description, sizeof(PluginData->Description),
             TEXT("A simple viewer for ApiSet schema."));
 
         //

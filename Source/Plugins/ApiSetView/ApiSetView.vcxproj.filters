@@ -39,6 +39,9 @@
     <ClCompile Include="..\..\Shared\minirtl\_strlen.c">
       <Filter>minirtl</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Shared\minirtl\_strstri.c">
+      <Filter>minirtl</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="global.h">

@@ -101,6 +101,7 @@
     <ClCompile Include="..\..\Shared\minirtl\_strcpy.c" />
     <ClCompile Include="..\..\Shared\minirtl\_strlen.c" />
     <ClCompile Include="..\..\Shared\minirtl\_strncmpi.c" />
+    <ClCompile Include="..\..\Shared\minirtl\_strstri.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="query.c" />
   </ItemGroup>
