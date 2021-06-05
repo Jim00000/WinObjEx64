@@ -22,4 +22,5 @@ View contents of Section object type and it child structures such as CONTROL_ARE
 
  - **Other**
    + Added ExCreateCallback list to the callbacks list
+   + ApiSetSchema view plugin updated
    + Fixed several bugs

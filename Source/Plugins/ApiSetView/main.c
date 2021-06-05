@@ -157,9 +157,9 @@ BOOL InitTreeList(
     _Out_ HWND* pTreeListHwnd
 )
 {
-    HWND     TreeList;
-    HDITEM   hdritem;
-    RECT     rc;
+    HWND TreeList;
+    HDITEM hdritem;
+    RECT rc;
 
     UINT uDpi;
     INT dpiScaledX, dpiScaledY, iScaledWidth, iScaledHeight, iScaleSubX, iScaleSubY;

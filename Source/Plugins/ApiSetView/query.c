@@ -79,6 +79,53 @@ HTREEITEM TreeListAddItem(
 }
 
 /*
+* GetApiSetEntryName
+*
+* Purpose:
+*
+* Return apiset entry name, use HeapFree to release allocated memory.
+*
+*/
+LPWSTR GetApiSetEntryName(
+    _In_ PBYTE Namespace,
+    _In_ ULONG NameOffset,
+    _In_ ULONG NameLength
+)
+{
+    PWSTR lpEntryName, lpStr;
+
+    if (NameLength == 0)
+        return NULL;
+
+    lpEntryName = HeapAlloc(
+        g_ctx.PluginHeap,
+        HEAP_ZERO_MEMORY,
+        NameLength + sizeof(WCHAR));
+
+    if (lpEntryName) {
+
+        lpStr = lpEntryName;
+
+        //
+        // Copy namespace entry name.
+        //
+        RtlCopyMemory(
+            lpStr,
+            (PWSTR)RtlOffsetToPointer(Namespace, NameOffset),
+            NameLength);
+
+        //
+        // Add terminating null.
+        //
+        lpStr += (NameLength / sizeof(WCHAR));
+        *lpStr = 0;
+
+    }
+
+    return lpEntryName;
+}
+
+/*
 * OutNamespaceEntry
 *
 * Purpose:
@@ -101,7 +148,7 @@ HTREEITEM OutNamespaceEntry(
 
     subitems.Text[0] = L"";
 
-    if (FlagsValid && Flags) {
+    if (FlagsValid) {
         szBuffer[0] = 0;
         ultostr(Flags, szBuffer);
         lpText = szBuffer;
@@ -128,7 +175,7 @@ HTREEITEM OutNamespaceEntry(
 *
 * Purpose:
 *
-* Namespace value formatted output routine.
+* Add entry to treelist with namespace value information.
 *
 */
 void OutNamespaceValue(
@@ -142,77 +189,37 @@ void OutNamespaceValue(
     _In_ BOOL FlagsValid
 )
 {
-    TL_SUBITEMS_FIXED subitems;
-    PWSTR NamePtr, ValueName = NULL, AliasName = NULL, sptr = NULL;
+    TL_SUBITEMS_FIXED tlSubItems;
+    LPWSTR lpValueName = NULL, lpAliasName = NULL;
     WCHAR szBuffer[20];
 
-    RtlSecureZeroMemory(&subitems, sizeof(subitems));
+    //
+    // Get value name.
+    //
+    lpValueName = GetApiSetEntryName(
+        Namespace,
+        ValueOffset,
+        ValueLength);
 
-    // print value name
+    //
+    // Get value alias if present.
+    //
+    lpAliasName = GetApiSetEntryName(Namespace,
+        NameOffset,
+        NameLength);
 
-    if (ValueLength) {
+    RtlSecureZeroMemory(&tlSubItems, sizeof(tlSubItems));
+    tlSubItems.Count = 2;
+    tlSubItems.Text[0] = (lpAliasName != NULL) ? lpAliasName : L"";
 
-        NamePtr = (PWSTR)RtlOffsetToPointer(Namespace, ValueOffset);
-
-        ValueName = HeapAlloc(
-            g_ctx.PluginHeap, 
-            HEAP_ZERO_MEMORY, 
-            ValueLength + sizeof(WCHAR));
-
-        if (ValueName) {
-            sptr = ValueName;
-
-            RtlCopyMemory(
-                sptr,
-                NamePtr,
-                ValueLength);
-
-            sptr += (ValueLength / sizeof(WCHAR));
-            *sptr = 0;
-
-        }
-    }
-
-    // print value alias
-    if (NameLength) {
-
-        NamePtr = (PWSTR)RtlOffsetToPointer(Namespace, NameOffset);
-
-        AliasName = HeapAlloc(
-            g_ctx.PluginHeap, 
-            HEAP_ZERO_MEMORY, 
-            NameLength + sizeof(WCHAR));
-
-        if (AliasName) {
-            sptr = AliasName;
-
-            RtlCopyMemory(
-                sptr,
-                NamePtr,
-                NameLength);
-
-            sptr += (NameLength / sizeof(WCHAR));
-            *sptr = 0;
-
-            sptr = AliasName;
-
-        }
-    }
-    else {
-        sptr = L"";
-    }
-    subitems.Text[0] = sptr;
-
-    if (FlagsValid && Flags) {
+    if (FlagsValid) {
         szBuffer[0] = 0;
         ultostr(Flags, szBuffer);
-        sptr = szBuffer;
+        tlSubItems.Text[1] = szBuffer;
     }
     else {
-        sptr = L"";
+        tlSubItems.Text[1] = L"";
     }
-    subitems.Text[1] = sptr;
-    subitems.Count = 2;
 
     TreeListAddItem(
         g_ctx.TreeList,
@@ -220,58 +227,11 @@ void OutNamespaceValue(
         TVIF_TEXT | TVIF_STATE,
         (UINT)0,
         (UINT)0,
-        ValueName,
-        &subitems);
+        lpValueName,
+        &tlSubItems);
 
-    if (ValueName) HeapFree(g_ctx.PluginHeap, 0, ValueName);
-    if (AliasName) HeapFree(g_ctx.PluginHeap, 0, AliasName);
-}
-
-/*
-* GetApiSetEntryName
-*
-* Purpose:
-*
-* Return apiset entry name, use HeapFree to release allocated memory.
-*
-*/
-LPWSTR GetApiSetEntryName(
-    _In_ PBYTE Namespace,
-    _In_ ULONG NameOffset,
-    _In_ ULONG NameLength
-)
-{
-    PWSTR lpEntryName, lpStr;
-
-    if (NameLength == 0)
-        return NULL;
-
-    lpEntryName = HeapAlloc(
-        g_ctx.PluginHeap, 
-        HEAP_ZERO_MEMORY, 
-        NameLength + sizeof(WCHAR));
-
-    if (lpEntryName) {
-
-        lpStr = lpEntryName;
-
-        //
-        // Copy namespace entry name.
-        //
-        RtlCopyMemory(
-            lpStr,
-            (PWSTR)RtlOffsetToPointer(Namespace, NameOffset),
-            NameLength);
-
-        //
-        // Add terminating null.
-        //
-        lpStr += (NameLength / sizeof(WCHAR));
-        *lpStr = 0;
-
-    }
-
-    return lpEntryName;
+    if (lpValueName) HeapFree(g_ctx.PluginHeap, 0, lpValueName);
+    if (lpAliasName) HeapFree(g_ctx.PluginHeap, 0, lpAliasName);
 }
 
 /*
@@ -608,7 +568,6 @@ VOID WINAPI ListApiSetFromFileWorker(
     // Disable controls.
     //
     EnableWindow(GetDlgItem(g_ctx.MainWindow, IDC_BROWSE_BUTTON), FALSE);
-    EnableWindow(GetDlgItem(g_ctx.MainWindow, IDC_SEARCH_BUTTON), FALSE);
 
     //
     // Reset output controls.
@@ -681,7 +640,6 @@ VOID WINAPI ListApiSetFromFileWorker(
     // Reenable controls.
     //
     EnableWindow(GetDlgItem(g_ctx.MainWindow, IDC_BROWSE_BUTTON), TRUE);
-    EnableWindow(GetDlgItem(g_ctx.MainWindow, IDC_SEARCH_BUTTON), TRUE);
     TreeList_RedrawEnableAndUpdateNow(g_ctx.TreeList);
 }
 
